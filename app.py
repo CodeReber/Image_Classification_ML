@@ -1,7 +1,14 @@
 import os
-from flask import Flask, flash, request, redirect, url_for, jsonify
+from flask import Flask, flash, request, redirect, url_for, jsonify, render_template
 from werkzeug.utils import secure_filename
+from tensorflow import keras
+import tensorflow as tf
 from keras.preprocessing import image
+
+# Hide CPU Tensorflow AVX Message
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+sess = keras.backend.clear_session()
 
 
 UPLOAD_FOLDER = 'uploads'
@@ -9,6 +16,9 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+model = None
+graph = None
 
 
 def allowed_file(filename):
@@ -31,8 +41,30 @@ def prepare_image(img):
     return image_array
 
 
+def load_model():
+    global model
+    global graph
+    model = keras.models.load_model("./models/mnist_trained.h5")
+    graph = tf.Graph()
+
+
+load_model()
+## ================================ ##
+## ====== FRONT END ROUTES ======== ##
+## ================================ ##
+
+
+@app.route('/home')
+def home():
+    return render_template("index.html")
+## ================================ ##
+## ====== BACK END ROUTES ======== ##
+## ================================ ##
+
+
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
+    data = {"success": False}
     if request.method == 'POST':
         # check if the post request has the file part
         if 'file' not in request.files:
@@ -53,23 +85,26 @@ def upload_file():
             image_size = (28, 28)
 
             im = image.load_img(
-                filepath, target_size=image_size, grayscale=True)
+                filepath, target_size=image_size, color_mode="grayscale")
 
             image_array = prepare_image(im)
             # return redirect(url_for('upload_file',
             # filename=filename))
-            print(image_array)
+            # print in terminal the array of image uploaded
+            # print(image_array)
 
             return "Data Pre-Processing Complete!"
-    return '''
-    <!doctype html>
-    <title>Upload new File</title>
-    <h1>Upload new File</h1>
-    <form method=post enctype=multipart/form-data>
-      <input type=file name=file>
-      <input type=submit value=Upload>
-    </form>
-    '''
+
+            # Tensorflow default graph and use to make predictions
+            global graph
+            with graph.as_default():
+                predicted = model.predict_classes(image_array)[0]
+                data["prediction"] = str(predicted)
+                data["success"] = True
+
+            return jsonify(data)
+
+    return render_template("index.html")
 
 
 if __name__ == "__main__":
